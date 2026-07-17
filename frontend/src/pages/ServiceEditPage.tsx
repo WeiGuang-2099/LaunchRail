@@ -57,7 +57,7 @@ export function ServiceEditPage() {
   return (
     <>
       <header className="page-header">
-        <p className="eyebrow">Catalog / Edit metadata</p>
+        <p className="eyebrow">Manifest / Amend record</p>
         <Link className="back-link" to={`/services/${service.id}`}>
           Back to service
         </Link>

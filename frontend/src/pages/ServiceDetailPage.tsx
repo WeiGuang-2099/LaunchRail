@@ -91,7 +91,7 @@ export function ServiceDetailPage() {
   return (
     <>
       <header className="page-header detail-header">
-        <p className="eyebrow">Catalog / Service record</p>
+        <p className="eyebrow">Manifest / Service record</p>
         <Link
           className="back-link"
           to={`/services?status=${service.archivedAt ? "archived" : "active"}`}
