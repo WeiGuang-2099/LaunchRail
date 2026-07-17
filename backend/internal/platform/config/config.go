@@ -16,11 +16,14 @@ const (
 
 type Config struct {
 	HTTPAddress     string
+	DatabaseURL     string
 	LogLevel        slog.Level
 	ShutdownTimeout time.Duration
 }
 
 func Load() (Config, error) {
+	databaseURL := strings.TrimSpace(os.Getenv("LAUNCHRAIL_DATABASE_URL"))
+
 	httpAddress := strings.TrimSpace(os.Getenv("LAUNCHRAIL_HTTP_ADDR"))
 	if httpAddress == "" {
 		httpAddress = defaultHTTPAddress
@@ -50,6 +53,7 @@ func Load() (Config, error) {
 
 	return Config{
 		HTTPAddress:     httpAddress,
+		DatabaseURL:     databaseURL,
 		LogLevel:        logLevel,
 		ShutdownTimeout: shutdownTimeout,
 	}, nil

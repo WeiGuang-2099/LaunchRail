@@ -1,0 +1,89 @@
+# LaunchRail
+
+LaunchRail is a portfolio-grade internal developer platform built as working, testable software. The current milestone delivers a full-stack service catalog where platform users can register, inspect, update, list, and archive service records.
+
+## Current capabilities
+
+- Versioned REST API with consistent JSON errors and request IDs.
+- Service catalog domain validation and immutable service keys.
+- PostgreSQL persistence with explicit SQL migrations.
+- React and TypeScript interface for the full service record lifecycle.
+- Liveness and database-backed readiness checks.
+- Docker Compose delivery for PostgreSQL, migrations, API, and frontend.
+- Unit, HTTP, frontend, and PostgreSQL integration test suites.
+
+Authentication, GitHub synchronization, Kubernetes delivery, GitOps, deployment orchestration, and the wider observability stack are planned work and are not implemented yet. See [docs/roadmap.md](docs/roadmap.md).
+
+## Quick start
+
+Requirements:
+
+- Docker with the Compose plugin.
+- Ports `3000`, `8080`, and `5432` available on localhost, or overrides in a local `.env` file.
+
+Start the complete stack:
+
+```text
+docker compose up --build
+```
+
+Open:
+
+- Service catalog UI: `http://localhost:3000`
+- API readiness: `http://localhost:8080/readyz`
+- API specification: [api/openapi.yaml](api/openapi.yaml)
+
+Compose runs the migration job after PostgreSQL becomes healthy and starts the API only after migrations complete. To stop the running services without deleting data:
+
+```text
+docker compose stop
+```
+
+## API summary
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `POST` | `/api/v1/services` | Register a service |
+| `GET` | `/api/v1/services` | List active, archived, or all services |
+| `GET` | `/api/v1/services/{id}` | Read a service record |
+| `PUT` | `/api/v1/services/{id}` | Replace mutable metadata |
+| `DELETE` | `/api/v1/services/{id}` | Archive a service |
+| `GET` | `/healthz` | Process liveness |
+| `GET` | `/readyz` | Database-backed readiness |
+
+Service keys are permanent. Archiving is idempotent and terminal; records are retained for operational history.
+
+## Development
+
+Backend checks:
+
+```text
+cd backend
+go fmt ./...
+go vet ./...
+go test ./...
+```
+
+Frontend checks:
+
+```text
+cd frontend
+npm ci
+npm run format:check
+npm run lint
+npm run test
+npm run build
+```
+
+PostgreSQL integration tests use a dedicated Compose profile and database:
+
+```text
+docker compose --profile test up -d db-test
+cd backend
+set TEST_DATABASE_URL=postgres://launchrail_test:launchrail_test@localhost:5433/launchrail_test?sslmode=disable
+go test -tags=integration ./...
+```
+
+PowerShell users can set the variable with `$env:TEST_DATABASE_URL=...`.
+
+Detailed setup and engineering workflows are in [docs/development.md](docs/development.md). The system design is documented in [docs/architecture.md](docs/architecture.md).

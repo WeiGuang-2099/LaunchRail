@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: LaunchRail Control Plane API
+  version: 0.1.0
+  description: Versioned API for the implemented LaunchRail service catalog.
+servers:
+  - url: http://localhost:8080
+    description: Local API process
+security: []
+tags:
+  - name: Health
+    description: Process liveness and dependency readiness checks.
+  - name: Services
+    description: Service catalog lifecycle operations.
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Check process liveness
+      operationId: getLiveness
+      responses:
+        "200":
+          description: The API process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "405":
+          description: The requested method is not supported.
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Check database-backed readiness
+      operationId: getReadiness
+      responses:
+        "200":
+          description: The API and PostgreSQL are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: PostgreSQL is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "405":
+          description: The requested method is not supported.
+  /api/v1/services:
+    get:
+      tags: [Services]
+      summary: List service records
+      operationId: listServices
+      parameters:
+        - name: status
+          in: query
+          description: Archive state to include.
+          schema:
+            type: string
+            enum: [active, archived, all]
+            default: active
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: A page of service records ordered by newest creation time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Services]
+      summary: Register a service
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceCreate"
+      responses:
+        "201":
+          description: The service was registered.
+          headers:
+            Location:
+              description: Relative URL of the created service.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: The service key already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/services/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ServiceID"
+    get:
+      tags: [Services]
+      summary: Get a service record
+      operationId: getService
+      responses:
+        "200":
+          description: The requested active or archived service.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/ServiceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Services]
+      summary: Replace mutable service metadata
+      description: The service key is immutable and is not accepted in this request.
+      operationId: updateService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceWrite"
+      responses:
+        "200":
+          description: The service metadata was updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/ServiceNotFound"
+        "409":
+          description: The service is archived and cannot be changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Services]
+      summary: Archive a service
+      description: Archiving is terminal and idempotent. The record is not physically deleted.
+      operationId: archiveService
+      responses:
+        "204":
+          description: The service is archived.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/ServiceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  parameters:
+    ServiceID:
+      name: id
+      in: path
+      required: true
+      description: Service UUID.
+      schema:
+        type: string
+        format: uuid
+  responses:
+    InvalidRequest:
+      description: The path, query, or JSON body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    UnsupportedMediaType:
+      description: Content-Type is not application/json.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ValidationFailed:
+      description: One or more business fields are invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ServiceNotFound:
+      description: The service does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InternalError:
+      description: The request failed without exposing internal details.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          examples: [ready]
+    Lifecycle:
+      type: string
+      enum: [development, production, deprecated]
+    ServiceMetadata:
+      type: object
+      required: [displayName, ownerTeam, repositoryUrl, lifecycle]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+          default: ""
+        ownerTeam:
+          type: string
+          minLength: 1
+          maxLength: 120
+        repositoryUrl:
+          type: string
+          format: uri
+          maxLength: 512
+          pattern: ^https://github\.com/[^/]+/[^/]+/?$
+        lifecycle:
+          $ref: "#/components/schemas/Lifecycle"
+    ServiceWrite:
+      type: object
+      additionalProperties: false
+      required: [displayName, ownerTeam, repositoryUrl, lifecycle]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+          default: ""
+        ownerTeam:
+          type: string
+          minLength: 1
+          maxLength: 120
+        repositoryUrl:
+          type: string
+          format: uri
+          maxLength: 512
+          pattern: ^https://github\.com/[^/]+/[^/]+/?$
+        lifecycle:
+          $ref: "#/components/schemas/Lifecycle"
+    ServiceCreate:
+      allOf:
+        - $ref: "#/components/schemas/ServiceMetadata"
+        - type: object
+          required: [serviceKey]
+          properties:
+            serviceKey:
+              type: string
+              pattern: ^[a-z][a-z0-9-]{0,62}$
+      unevaluatedProperties: false
+    Service:
+      allOf:
+        - $ref: "#/components/schemas/ServiceMetadata"
+        - type: object
+          required: [id, serviceKey, createdAt, updatedAt, archivedAt]
+          properties:
+            serviceKey:
+              type: string
+              pattern: ^[a-z][a-z0-9-]{0,62}$
+            id:
+              type: string
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+            archivedAt:
+              type: [string, "null"]
+              format: date-time
+      unevaluatedProperties: false
+    Pagination:
+      type: object
+      additionalProperties: false
+      required: [total, limit, offset]
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+    ServicePage:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestId, details]
+      properties:
+        code:
+          type: string
+          examples: [validation_failed]
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
