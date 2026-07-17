@@ -12,7 +12,9 @@ LaunchRail is a portfolio-grade internal developer platform built as working, te
 - Docker Compose delivery for PostgreSQL, migrations, API, and frontend.
 - Unit, HTTP, frontend, and PostgreSQL integration test suites.
 
-Authentication, GitHub synchronization, Kubernetes delivery, GitOps, deployment orchestration, and the wider observability stack are planned work and are not implemented yet. See [docs/roadmap.md](docs/roadmap.md).
+Authentication and authorization are not implemented. Their accepted design uses generic OIDC, backend-managed sessions, controlled team ownership, and append-only audit events. See [ADR 0003](docs/adr/0003-oidc-bff-sessions.md), [ADR 0004](docs/adr/0004-team-scoped-authorization-and-audit.md), and the [identity threat model](docs/security/threat-model.md). These documents define the next milestone; they do not describe current runtime behavior.
+
+GitHub synchronization, Kubernetes delivery, GitOps, deployment orchestration, and the wider observability stack are also planned work. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Quick start
 
@@ -41,17 +43,19 @@ docker compose stop
 
 ## API summary
 
-| Method | Path | Behavior |
-| --- | --- | --- |
-| `POST` | `/api/v1/services` | Register a service |
-| `GET` | `/api/v1/services` | List active, archived, or all services |
-| `GET` | `/api/v1/services/{id}` | Read a service record |
-| `PUT` | `/api/v1/services/{id}` | Replace mutable metadata |
-| `DELETE` | `/api/v1/services/{id}` | Archive a service |
-| `GET` | `/healthz` | Process liveness |
-| `GET` | `/readyz` | Database-backed readiness |
+| Method   | Path                    | Behavior                               |
+| -------- | ----------------------- | -------------------------------------- |
+| `POST`   | `/api/v1/services`      | Register a service                     |
+| `GET`    | `/api/v1/services`      | List active, archived, or all services |
+| `GET`    | `/api/v1/services/{id}` | Read a service record                  |
+| `PUT`    | `/api/v1/services/{id}` | Replace mutable metadata               |
+| `DELETE` | `/api/v1/services/{id}` | Archive a service                      |
+| `GET`    | `/healthz`              | Process liveness                       |
+| `GET`    | `/readyz`               | Database-backed readiness              |
 
 Service keys are permanent. Archiving is idempotent and terminal; records are retained for operational history.
+
+The API summary and [OpenAPI specification](api/openapi.yaml) describe the currently implemented unauthenticated API. Planned identity routes and permission fields will be added to OpenAPI only when their runtime implementation is delivered.
 
 ## Development
 

@@ -38,11 +38,45 @@ The API process does not apply migrations. A separate migration command owns sch
 
 The `services` table stores UUID identity, an immutable unique service key, mutable catalog metadata, lifecycle, audit timestamps, and a nullable archive timestamp. Database constraints mirror important domain invariants. Archived records remain queryable and cannot be edited.
 
+## Accepted identity design
+
+Authentication and authorization are designed but not implemented. [ADR 0003](adr/0003-oidc-bff-sessions.md) selects generic OIDC through a Go backend for frontend with PostgreSQL-backed opaque sessions. [ADR 0004](adr/0004-team-scoped-authorization-and-audit.md) defines controlled team ownership, application-layer authorization, and transactional audit events. The [identity threat model](security/threat-model.md) records trust boundaries, required controls, validation, and residual risks.
+
+Keycloak is the planned local reference provider, not an application dependency. In a deployed environment, Nginx remains the only browser-facing LaunchRail component and proxies both `/auth` and `/api` to the control plane.
+
+```mermaid
+sequenceDiagram
+    actor User as Platform user
+    participant Browser as React browser
+    participant Gateway as Nginx gateway
+    participant API as Go control plane
+    participant IdP as OIDC provider
+    participant DB as PostgreSQL
+
+    User->>Browser: Start sign-in
+    Browser->>Gateway: GET /auth/login
+    Gateway->>API: Start bound OIDC transaction
+    API-->>Browser: Redirect with state, nonce, and PKCE
+    Browser->>IdP: Authenticate
+    IdP-->>Browser: Authorization code
+    Browser->>Gateway: GET /auth/callback
+    Gateway->>API: Forward callback
+    API->>IdP: Exchange code and validate claims
+    API->>DB: Store hashed opaque session
+    API-->>Browser: Set HttpOnly cookie and redirect
+    Browser->>Gateway: API request with session and CSRF header
+    Gateway->>API: Same-origin request
+    API->>DB: Resolve session, team, service, and policy
+    API->>DB: Commit mutation and audit event together
+```
+
+This flow is an accepted target architecture. The current Nginx configuration, API routes, database schema, React client, and OpenAPI document do not contain these identity capabilities.
+
 ## Planned architecture
 
 The following are not part of the current implementation:
 
-- Identity provider integration and role-based access control.
+- Identity provider integration and role-based access control; their design is accepted above.
 - GitHub repository discovery and metadata synchronization.
 - Kubernetes workload and environment inventory.
 - GitOps delivery with Argo CD and progressive delivery with Argo Rollouts.
