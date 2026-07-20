@@ -7,3 +7,10 @@ backend/coverage.out
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
+.cache/
+frontend/playwright-report/
+frontend/test-results/
+sbom/
+
+# Local implementation plans
+tasks/

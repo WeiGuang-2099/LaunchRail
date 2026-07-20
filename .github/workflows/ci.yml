@@ -1,0 +1,170 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Run vet
+        run: go vet ./...
+      - name: Run unit tests
+        run: go test ./...
+
+  backend-integration:
+    name: Backend Integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.10-alpine3.23@sha256:8189a1f6e40904781fc9e2612687877791d21679866db58b1de996b31fc312e4
+        env:
+          POSTGRES_DB: launchrail_test
+          POSTGRES_USER: launchrail_test
+          POSTGRES_PASSWORD: launchrail_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U launchrail_test -d launchrail_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgres://launchrail_test:launchrail_test@127.0.0.1:5433/launchrail_test?sslmode=disable
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Run PostgreSQL integration tests
+        run: go test -tags=integration ./...
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20.20.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Run lint
+        run: npm run lint
+      - name: Run unit tests
+        run: npm run test
+      - name: Build production assets
+        run: npm run build
+
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Validate OpenAPI
+        run: >-
+          docker run --rm
+          --volume "${{ github.workspace }}/api:/spec:ro"
+          redocly/cli:2.27.0@sha256:119913c77da63685f2e76be82470231823278a1658edd3806ea4c7c48d21b891
+          lint --config /spec/redocly.yaml /spec/openapi.yaml
+
+  compose:
+    name: Compose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Validate default configuration
+        run: docker compose config -q
+      - name: Validate test configuration
+        run: docker compose --profile test config -q
+      - name: Validate E2E configuration
+        run: docker compose --profile e2e config -q
+
+  e2e:
+    name: End-to-End
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: [backend, backend-integration, frontend, contracts, compose]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Prepare evidence directories
+        run: |
+          mkdir -p frontend/playwright-report frontend/test-results
+          chmod 0777 frontend/playwright-report frontend/test-results
+      - name: Run full-stack smoke test
+        run: >-
+          docker compose --profile e2e up --build
+          --abort-on-container-exit
+          --exit-code-from e2e
+          e2e
+      - name: Upload Playwright evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop E2E stack
+        if: always()
+        run: docker compose --profile e2e down --remove-orphans

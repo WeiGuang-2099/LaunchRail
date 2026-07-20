@@ -1,0 +1,14 @@
+apis:
+  launchrail@v1:
+    root: ./openapi.yaml
+
+extends:
+  - minimal
+
+rules:
+  operation-operationId: error
+  operation-summary: error
+  no-unresolved-refs: error
+  no-server-example.com: off
+
+telemetry: off

@@ -8,13 +8,14 @@ export function ServiceCreatePage() {
   return (
     <>
       <header className="page-header">
-        <p className="eyebrow">Catalog / Register</p>
+        <p className="eyebrow">Manifest / New record</p>
         <Link className="back-link" to="/services">
           Back to catalog
         </Link>
         <h1>Register a service</h1>
         <p className="lede">
-          Create the canonical record that platform workflows will build on.
+          Give the team one durable record for ownership, source, and delivery
+          status.
         </p>
       </header>
       <ServiceForm

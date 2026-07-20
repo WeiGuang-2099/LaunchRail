@@ -1,0 +1,179 @@
+name: Security Baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+  TRIVY_SKIP_JAVA_DB_UPDATE: "true"
+
+jobs:
+  security:
+    name: Security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Compute Trivy cache key
+        id: trivy-cache-key
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Restore Trivy database cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/trivy
+          key: trivy-${{ runner.os }}-0.72.0-${{ steps.trivy-cache-key.outputs.date }}
+          restore-keys: |
+            trivy-${{ runner.os }}-0.72.0-
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20.20.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Audit npm dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+      - name: Prepare scanner cache and outputs
+        run: mkdir -p .cache/trivy .cache/image-tars sbom
+      - name: Scan source dependencies, secrets, and Dockerfiles
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --env TRIVY_INCLUDE_DEV_DEPS=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          $TRIVY_IMAGE
+          fs
+          --scanners vuln,secret,misconfig
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --format table
+          --no-progress
+          --skip-dirs /workspace/.git
+          --skip-dirs /workspace/.cache
+          --skip-dirs /workspace/frontend/node_modules
+          --skip-dirs /workspace/frontend/dist
+          --skip-dirs /workspace/frontend/test-results
+          --skip-dirs /workspace/frontend/playwright-report
+          --skip-dirs /workspace/backend/bin
+          --skip-dirs /workspace/sbom
+          /workspace
+      - name: Build runtime images
+        run: |
+          docker build --tag launchrail-backend:scan ./backend
+          docker build --tag launchrail-frontend:scan ./frontend
+      - name: Export runtime images for isolated scanning
+        run: |
+          docker save --output .cache/image-tars/backend.tar launchrail-backend:scan
+          docker save --output .cache/image-tars/frontend.tar launchrail-frontend:scan
+      - name: Scan backend image
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          $TRIVY_IMAGE
+          image
+          --input /workspace/.cache/image-tars/backend.tar
+          --scanners vuln,secret
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --format table
+          --no-progress
+      - name: Scan frontend image
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          $TRIVY_IMAGE
+          image
+          --input /workspace/.cache/image-tars/frontend.tar
+          --scanners vuln,secret
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --format table
+          --no-progress
+      - name: Generate source SBOM
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --env TRIVY_INCLUDE_DEV_DEPS=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          --volume "${{ github.workspace }}/sbom:/output"
+          $TRIVY_IMAGE
+          fs
+          --scanners vuln
+          --format cyclonedx
+          --output /output/source.cdx.json
+          --no-progress
+          --skip-dirs /workspace/.git
+          --skip-dirs /workspace/.cache
+          --skip-dirs /workspace/frontend/node_modules
+          --skip-dirs /workspace/frontend/dist
+          --skip-dirs /workspace/frontend/test-results
+          --skip-dirs /workspace/frontend/playwright-report
+          --skip-dirs /workspace/backend/bin
+          --skip-dirs /workspace/sbom
+          /workspace
+      - name: Generate backend image SBOM
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          --volume "${{ github.workspace }}/sbom:/output"
+          $TRIVY_IMAGE
+          image
+          --scanners vuln
+          --input /workspace/.cache/image-tars/backend.tar
+          --format cyclonedx
+          --output /output/backend-image.cdx.json
+          --no-progress
+      - name: Generate frontend image SBOM
+        run: >-
+          docker run --rm
+          --env TRIVY_SKIP_JAVA_DB_UPDATE=true
+          --volume "${{ github.workspace }}:/workspace:ro"
+          --volume "${{ github.workspace }}/.cache/trivy:/root/.cache/trivy"
+          --volume "${{ github.workspace }}/sbom:/output"
+          $TRIVY_IMAGE
+          image
+          --scanners vuln
+          --input /workspace/.cache/image-tars/frontend.tar
+          --format cyclonedx
+          --output /output/frontend-image.cdx.json
+          --no-progress
+      - name: Validate SBOM documents
+        run: |
+          for document in sbom/*.cdx.json; do
+            jq -e '.bomFormat == "CycloneDX" and (.components | type == "array")' "$document" >/dev/null
+          done
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: launchrail-sbom
+          path: sbom/*.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary image archives
+        if: always()
+        run: rm -f .cache/image-tars/backend.tar .cache/image-tars/frontend.tar

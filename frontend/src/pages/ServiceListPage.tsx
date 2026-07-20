@@ -63,37 +63,40 @@ export function ServiceListPage() {
 
   return (
     <>
-      <header className="page-header split-header">
+      <header className="page-header manifest-header">
         <div>
-          <p className="eyebrow">Control plane / Catalog</p>
-          <h1>Service catalog</h1>
-          <p className="lede">
-            A reliable inventory of service ownership, source, and lifecycle.
-          </p>
+          <p className="eyebrow">Registry 01 / Service records</p>
+          <h1>
+            Service
+            <span>manifest</span>
+          </h1>
         </div>
-        <Link className="button primary" to="/services/new">
-          Register service
-        </Link>
+        <div className="header-brief">
+          <p className="lede">
+            The plain record of what runs, who owns it, and where the code
+            lives.
+          </p>
+          <Link className="button primary" to="/services/new">
+            Register service
+          </Link>
+        </div>
       </header>
 
       {resultMessage && (
         <div className="alert success" role="status">
+          <span>Operation complete</span>
           {resultMessage}
         </div>
       )}
 
-      <section className="catalog-panel" aria-labelledby="catalog-heading">
-        <div className="catalog-toolbar">
-          <div>
-            <h2 id="catalog-heading">Inventory</h2>
-            <p>
-              {loading
-                ? "Loading records"
-                : `${total} service${total === 1 ? "" : "s"} in this view`}
-            </p>
+      <section className="manifest" aria-labelledby="catalog-heading">
+        <div className="manifest-toolbar">
+          <div className="manifest-title">
+            <span>Live index</span>
+            <h2 id="catalog-heading">Registered services</h2>
           </div>
           <div className="status-tabs" aria-label="Service status">
-            {(["active", "archived"] as const).map((value) => (
+            {(["active", "archived"] as const).map((value, index) => (
               <button
                 key={value}
                 className={
@@ -102,10 +105,24 @@ export function ServiceListPage() {
                 onClick={() => selectStatus(value)}
                 aria-pressed={status === value}
               >
+                <span>{String(index + 1).padStart(2, "0")}</span>
                 {value}
               </button>
             ))}
           </div>
+          <p className="record-count" aria-live="polite">
+            <strong>{loading ? "--" : String(total).padStart(2, "0")}</strong>
+            records in view
+          </p>
+        </div>
+
+        <div className="manifest-columns" aria-hidden="true">
+          <span>No.</span>
+          <span>Service / key</span>
+          <span>Owner</span>
+          <span>Lifecycle</span>
+          <span>Updated</span>
+          <span>Record</span>
         </div>
 
         {loading && <LoadingList />}
@@ -128,7 +145,7 @@ export function ServiceListPage() {
         )}
         {!loading && !error && services.length === 0 && (
           <div className="state-panel compact">
-            <p className="eyebrow">No records</p>
+            <p className="eyebrow">No records on this line</p>
             <h2>
               {status === "archived"
                 ? "No archived services"
@@ -136,8 +153,8 @@ export function ServiceListPage() {
             </h2>
             <p>
               {status === "archived"
-                ? "Archived services will remain visible here for operational history."
-                : "Create a durable service record with ownership and repository metadata."}
+                ? "Archived services stay here as part of the operational record."
+                : "Start the manifest with an owner, repository, and lifecycle."}
             </p>
             {status === "active" && (
               <Link className="button primary" to="/services/new">
@@ -147,9 +164,13 @@ export function ServiceListPage() {
           </div>
         )}
         {!loading && !error && services.length > 0 && (
-          <div className="service-grid">
-            {services.map((service) => (
-              <ServiceCard key={service.id} service={service} />
+          <div className="manifest-list">
+            {services.map((service, index) => (
+              <ServiceRow
+                key={service.id}
+                service={service}
+                index={offset + index + 1}
+              />
             ))}
           </div>
         )}
@@ -164,7 +185,7 @@ export function ServiceListPage() {
               Previous
             </button>
             <span>
-              Page {page} of {lastPage}
+              Page {page} / {lastPage}
             </span>
             <button
               className="button secondary"
@@ -180,47 +201,44 @@ export function ServiceListPage() {
   );
 }
 
-function ServiceCard({ service }: { service: Service }) {
+function ServiceRow({ service, index }: { service: Service; index: number }) {
   return (
-    <article className="service-card">
-      <div className="card-topline">
-        <span className={`lifecycle ${service.lifecycle}`}>
-          {service.lifecycle}
-        </span>
-        <span className="service-key">{service.serviceKey}</span>
-      </div>
-      <h3>
-        <Link to={`/services/${service.id}`}>{service.displayName}</Link>
-      </h3>
-      <p className="card-description">
-        {service.description || "No service description provided."}
-      </p>
-      <div className="card-meta">
-        <span>Owner</span>
-        <strong>{service.ownerTeam}</strong>
-      </div>
-      <div className="card-footer">
-        <span>Updated {formatDate(service.updatedAt)}</span>
-        <Link
-          to={`/services/${service.id}`}
-          aria-label={`View ${service.displayName}`}
-        >
-          View details
-        </Link>
-      </div>
-    </article>
+    <Link
+      className="service-row"
+      to={`/services/${service.id}`}
+      aria-label={`View ${service.displayName}`}
+    >
+      <span className="row-number">{String(index).padStart(2, "0")}</span>
+      <span className="service-identity">
+        <strong>{service.displayName}</strong>
+        <small>{service.serviceKey}</small>
+      </span>
+      <span className="row-owner" data-label="Owner">
+        {service.ownerTeam}
+      </span>
+      <span className={`lifecycle ${service.lifecycle}`}>
+        {service.lifecycle}
+      </span>
+      <span className="row-updated" data-label="Updated">
+        {formatDate(service.updatedAt)}
+      </span>
+      <span className="row-action">View -&gt;</span>
+    </Link>
   );
 }
 
 function LoadingList() {
   return (
     <div
-      className="service-grid"
+      className="manifest-list"
       aria-label="Loading services"
       aria-busy="true"
     >
       {[1, 2, 3].map((item) => (
-        <div className="service-card skeleton" key={item} aria-hidden="true">
+        <div className="service-row skeleton-row" key={item} aria-hidden="true">
+          <span />
+          <span />
+          <span />
           <span />
           <span />
           <span />
