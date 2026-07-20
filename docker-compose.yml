@@ -11,7 +11,7 @@ x-database-environment: &database-environment
 
 services:
   db:
-    image: postgres:17.10-alpine3.23
+    image: postgres:17.10-alpine3.23@sha256:8189a1f6e40904781fc9e2612687877791d21679866db58b1de996b31fc312e4
     environment: *database-environment
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -63,7 +63,14 @@ services:
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/frontend-healthz"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "--spider",
+          "http://127.0.0.1:8080/frontend-healthz",
+        ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -73,7 +80,7 @@ services:
     restart: unless-stopped
 
   db-test:
-    image: postgres:17.10-alpine3.23
+    image: postgres:17.10-alpine3.23@sha256:8189a1f6e40904781fc9e2612687877791d21679866db58b1de996b31fc312e4
     profiles: ["test"]
     environment:
       POSTGRES_DB: launchrail_test
@@ -86,6 +93,52 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  seed-e2e:
+    image: postgres:17.10-alpine3.23@sha256:8189a1f6e40904781fc9e2612687877791d21679866db58b1de996b31fc312e4
+    profiles: ["e2e"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-launchrail_local}
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - db
+      - -U
+      - ${POSTGRES_USER:-launchrail}
+      - -d
+      - ${POSTGRES_DB:-launchrail}
+      - -f
+      - /seeds/e2e.sql
+    volumes:
+      - ./backend/seeds:/seeds:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  e2e:
+    image: launchrail-e2e:local
+    profiles: ["e2e"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+    init: true
+    ipc: host
+    environment:
+      CI: ${CI:-false}
+      E2E_BASE_URL: http://frontend:8080
+      E2E_API_URL: http://api:8080
+    volumes:
+      - ./frontend/playwright-report:/work/playwright-report
+      - ./frontend/test-results:/work/test-results
+    depends_on:
+      frontend:
+        condition: service_healthy
+      seed-e2e:
+        condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   postgres_data:

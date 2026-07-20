@@ -38,6 +38,33 @@ The API process does not apply migrations. A separate migration command owns sch
 
 The `services` table stores UUID identity, an immutable unique service key, mutable catalog metadata, lifecycle, audit timestamps, and a nullable archive timestamp. Database constraints mirror important domain invariants. Archived records remain queryable and cannot be edited.
 
+## Engineering verification boundary
+
+Development and CI use the same repository-owned commands and pinned container images. Host Go and Node.js execute compilation and unit tests; Redocly, Playwright with Chromium, PostgreSQL, and Trivy execute in containers.
+
+```mermaid
+flowchart LR
+    Change["Source change"] --> Fast["Host Go and npm checks"]
+    Change --> Contract["Pinned Redocly container"]
+    Change --> Compose["Compose configuration validation"]
+    Compose --> Stack["PostgreSQL, migration, API, frontend, deterministic seed"]
+    Stack --> Browser["Pinned Playwright and Chromium container"]
+    Change --> Security["Trivy source, secret, and Dockerfile scan"]
+    Change --> Images["Backend and frontend runtime images"]
+    Images --> Security
+    Security --> SBOM["Three CycloneDX SBOM artifacts"]
+    Fast --> Required["Seven GitHub required checks"]
+    Contract --> Required
+    Browser --> Required
+    Security --> Required
+```
+
+The E2E profile reaches services only by Compose DNS names. Its fixed SQL seed is idempotent, so repeated runs verify the same list and detail path without relying on user data. The browser, traces, screenshots, and video remain inside the E2E container or ignored report directories.
+
+Trivy reuses one vulnerability cache, skips the unrelated Java database, and fails on source or runtime-image High and Critical findings and on detected secrets. Dockerfile misconfiguration scanning covers the Dockerfiles currently present. Compose is syntax-validated; it is not described as Kubernetes or Terraform policy coverage.
+
+The Go runtime image runs as `launchrail`. The Nginx runtime image runs as `nginx`, with writable PID, cache, and temporary paths granted only to that account. Both images retain health checks.
+
 ## Accepted identity design
 
 Authentication and authorization are designed but not implemented. [ADR 0003](adr/0003-oidc-bff-sessions.md) selects generic OIDC through a Go backend for frontend with PostgreSQL-backed opaque sessions. [ADR 0004](adr/0004-team-scoped-authorization-and-audit.md) defines controlled team ownership, application-layer authorization, and transactional audit events. The [identity threat model](security/threat-model.md) records trust boundaries, required controls, validation, and residual risks.

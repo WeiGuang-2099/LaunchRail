@@ -20,6 +20,19 @@ The roadmap distinguishes code that exists from intended platform expansion. Mil
 - Full-stack Docker Compose delivery with a dedicated migration job.
 - Isolated PostgreSQL test profile and frontend test toolchain.
 
+## In progress
+
+### Deterministic engineering baseline
+
+- Seven least-privilege CI jobs for backend, database integration, frontend, contracts, Compose, E2E, and security.
+- Dockerized Playwright browser testing with an idempotent catalog seed and direct exit-code propagation.
+- Pinned Redocly and Trivy execution without host installations or an unnecessary Java vulnerability database.
+- Source, secret, Dockerfile, and runtime-image scanning with CycloneDX SBOM artifacts.
+- Non-root backend and frontend runtime images with health checks.
+- Dependabot coverage for Go modules, npm, Actions, Dockerfiles, and Compose.
+
+The repository implementation is present, but this milestone remains **In progress**. It moves to **Implemented** only after a real pull request passes all seven checks, the `main` ruleset is active, the Security job has no unhandled High or Critical findings, and all three SBOM artifacts can be downloaded and parsed.
+
 ## Designed, not implemented
 
 ### Identity security baseline
@@ -42,7 +55,7 @@ The decisions are recorded in [ADR 0003](adr/0003-oidc-bff-sessions.md), [ADR 00
 - Resolve owner teams from the controlled directory and restrict ownership transfer.
 - Write catalog mutations and audit events in one transaction.
 
-The service catalog is the accepted product baseline. The security design is complete; implementation and verification are the next milestone.
+The service catalog is the accepted product baseline. Identity implementation follows completion of the engineering baseline and remains the next product milestone.
 
 ## Later
 
